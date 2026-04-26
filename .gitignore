@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*$py.class
+
+data/users.csv
+data/history_*.json
+data/수감자 죄악.xlsx
+
+venv/
+.venv/
+env/
+
+.env
+.DS_Store
