@@ -23,11 +23,12 @@ init_user_db()
 @st.cache_data
 def load_affiliation_data():
     try:
-        df = pd.read_excel("data/소속 죄악.xlsx")
-        return df
+        df_char = pd.read_excel("data/수감자 죄악.xlsx", sheet_name="수감자")
+        df_affil = pd.read_excel("data/수감자 죄악.xlsx", sheet_name="소속")
+        return df_char, df_affil
     except Exception as e:
         st.error(f"엑셀 파일을 불러오는 중 오류가 발생했습니다: {e}")
-        return pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame()
     
 @st.cache_data
 def load_questions():
@@ -101,6 +102,9 @@ def get_sin_icon_html(sin_name, skill_num):
     
 def set_result_background(result_name, apply_blur=True):
     bg_path = f"images/{result_name}배경.webp"
+    if not os.path.exists(bg_path):
+        bg_path = "images/기본배경.webp"
+        
     encoded_string = get_image_base64(bg_path)
     
     if not encoded_string: return
@@ -138,9 +142,34 @@ def set_result_background(result_name, apply_blur=True):
         unsafe_allow_html=True
     )
 
+def update_global_stats(answers):
+    stats_path = "data/global_stats.json"
+    os.makedirs("data", exist_ok=True)
+    
+    if os.path.exists(stats_path):
+        with open(stats_path, "r", encoding="utf-8") as f:
+            stats = json.load(f)
+    else:
+        stats = {}
+    
+    for i, ans in enumerate(answers):
+        q_key = str(i)
+        choice = ans.get("text", "죄악을 직면하기")
+        if q_key not in stats:
+            stats[q_key] = {}
+        stats[q_key][choice] = stats[q_key].get(choice, 0) + 1
+        
+    with open(stats_path, "w", encoding="utf-8") as f:
+        json.dump(stats, f, ensure_ascii=False, indent=2)
+
+def load_global_stats():
+    stats_path = "data/global_stats.json"
+    if os.path.exists(stats_path):
+        with open(stats_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
 def get_image_base64(image_path):
     if not os.path.exists(image_path):
-        st.warning(f"이미지 없음: {image_path}")
         return None
     
     mime_type, _ = mimetypes.guess_type(image_path)
@@ -239,28 +268,74 @@ def calculate_results():
                 sin_stats[attr]["score"] += score
                 sin_stats[attr]["count"] += 1
 
-    total_sin_score = sum(item["score"] for item in sin_stats.values())
-    if total_sin_score == 0: total_sin_score = 1 # 0으로 나누기 방지
+    sorted_sins = sorted(
+        sin_stats.items(), 
+        key=lambda x: (x[1]["score"], x[1]["count"]), 
+        reverse=True
+    )
     
-    user_pct = {sin: (data["score"] / total_sin_score) * 100 for sin, data in sin_stats.items()}
-    
-    total_faction_score = faction_stats["손가락"] + faction_stats["날개"]
-    preferred_faction = "손가락" if faction_stats["손가락"] >= faction_stats["날개"] else "날개"
-    
-    faction_strength = 0
-    if total_faction_score > 0:
-        faction_strength = max(faction_stats["손가락"], faction_stats["날개"]) / total_faction_score
+    while len(sorted_sins) < 3:
+        sorted_sins.append(("기본 공격", {"score": 0, "count": 0}))
 
-    df = load_affiliation_data()
+    sin1, score1 = sorted_sins[0][0], sorted_sins[0][1]["score"]
+    sin2, score2 = sorted_sins[1][0], sorted_sins[1][1]["score"]
+    sin3, score3 = sorted_sins[2][0], sorted_sins[2][1]["score"]
+
+    if score1 >= 2 * score2 and score2 > 0:
+        skill_3 = sin1
+        skill_2 = sin1
+        skill_1 = sin2
+    elif score2 >= 2 * score3 and score3 > 0:
+        skill_3 = sin1
+        skill_2 = sin2
+        skill_1 = sin2
+    else:
+        skill_3 = sin1
+        skill_2 = sin2
+        skill_1 = sin3
+
+    total_sin_score = sum(item["score"] for item in sin_stats.values())
+    if total_sin_score == 0: total_sin_score = 1 
+    user_pct = {sin: (data["score"] / total_sin_score) * 100 for sin, data in sin_stats.items()}
+    total_faction_score = faction_stats["손가락"] + faction_stats["날개"]
+    preferred_faction = None
+    if total_faction_score > 0:
+        preferred_faction = "손가락" if faction_stats["손가락"] >= faction_stats["날개"] else "날개"
+
+    df_char, df_affil = load_affiliation_data()
     best_affiliation = "도시의 유랑자"
-    min_distance = float('inf')
+    match_found = False
     
-    sins = ["분노", "색욕", "나태", "탐식", "우울", "오만", "질투"]
-    
-    if not df.empty:
-        for index, row in df.iterrows():
-            affiliation_name = row.get('겹치는 단어 (키워드)', '')
-            row_faction = row.get('소속', '')
+    if not df_char.empty:
+        matches = df_char[
+            (df_char['1스킬'] == skill_1) &
+            (df_char['2스킬'] == skill_2) &
+            (df_char['3스킬'] == skill_3)
+        ]
+        
+        if len(matches) > 0:
+            match_found = True
+            if len(matches) == 1:
+                best_affiliation = matches.iloc[0]['소속']
+            else:
+                if preferred_faction and '소속2' in matches.columns:
+                    faction_matches = matches[matches['소속2'] == preferred_faction]
+                    if len(faction_matches) > 0:
+                        matches = faction_matches
+                best_affiliation = matches.sample(n=1).iloc[0]['소속']
+
+    if not match_found and not df_affil.empty:
+        filtered_df = df_affil
+        if preferred_faction and '소속2' in df_affil.columns:
+            faction_df = df_affil[df_affil['소속2'] == preferred_faction]
+            if not faction_df.empty:
+                filtered_df = faction_df
+                
+        min_distance = float('inf')
+        sins = ["분노", "색욕", "나태", "탐식", "우울", "오만", "질투"]
+        
+        for index, row in filtered_df.iterrows():
+            affiliation_name = row.get('소속', row.get('겹치는 단어 (키워드)', '도시의 유랑자'))
             
             distance = 0
             for sin in sins:
@@ -275,160 +350,156 @@ def calculate_results():
                         row_val *= 100
                     distance += abs(user_pct[sin] - row_val)
             
-            if str(row_faction).strip() == preferred_faction:
-                distance -= (30 * faction_strength)
-                
             if distance < min_distance:
                 min_distance = distance
                 best_affiliation = affiliation_name
 
-    sorted_sins = sorted(
-        sin_stats.items(), 
-        key=lambda x: (x[1]["score"], x[1]["count"]), 
-        reverse=True
-    )
-    
-    top_3 = [item[0] for item in sorted_sins[:3]]
-    while len(top_3) < 3:
-        top_3.append("기본 공격")
+    return best_affiliation, skill_1, skill_2, skill_3, sorted_sins
 
-    return best_affiliation, top_3[2], top_3[1], top_3[0], sorted_sins
+if not st.session_state.get("logged_in", False):
+    st.session_state.user_id = "guest"
+    st.session_state.user_name = "비회원"
+elif "user_id" not in st.session_state:
+    st.session_state.user_id = st.query_params.get("user_id", "guest")
 
-if not st.session_state.logged_in:
+if st.session_state.show_login:
     set_background("images/림버스.webp", apply_blur=True)
-    if not st.session_state.show_login:
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:  
-            st.markdown(
-                """
-                <h1 style="text-align: center; color: white; text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000;">
-                도시 생존 성향 테스트
-                </h1>
-                <p style="text-align: center; color: white; text-shadow: 1px 1px 2px #000;">
-                뒷골목부터 둥지까지, 당신은 어느 곳에 어울리는 사람일까요?
-                <p style="text-align: center; color: white; text-shadow: 1px 1px 2px #000;">
-                2021204045 이성민
-                </p>
-                """,
-                unsafe_allow_html=True,
-                
-            )
+    st.markdown("""
+    <style>
+    div[data-testid="stTabs"] button p, 
+    div[data-testid="stTextInput"] label p {
+        color: black !important;
+        text-shadow: 
+            -1px -1px 0 #FFFFFF,  
+             1px -1px 0 #FFFFFF,
+            -1px  1px 0 #FFFFFF,
+             1px  1px 0 #FFFFFF !important;
+        font-weight: bold;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-            if st.button("로그인하고 테스트 시작하기", type="primary", use_container_width=True):
-                st.session_state.show_login = True
+    col_L, col_C, col_R = st.columns([1, 2, 1])
+    with col_C:
+        st.markdown("<h2 style='color: black; text-align: center; text-shadow: -1.5px -1.5px 0 #FFF, 1.5px -1.5px 0 #FFF, -1.5px 1.5px 0 #FFF, 1.5px 1.5px 0 #FFF;'>로그인 / 회원가입</h2>", unsafe_allow_html=True)
+        tab1, tab2 = st.tabs(["로그인", "회원가입"])
+        with tab1:
+            login_id = st.text_input("아이디", key="login_id")
+            login_pw = st.text_input("비밀번호", type="password", key="login_pw")
+            if st.button("로그인", use_container_width=True):
+                success, user_name = login_user(login_id, login_pw)
+                if success:
+                    st.session_state.logged_in = True
+                    st.session_state.user_id = login_id
+                    st.session_state.user_name = user_name
+                    st.session_state.show_login = False
+                    
+                    st.query_params["logged_in"] = "true"
+                    st.query_params["user_id"] = login_id
+                    st.query_params["user_name"] = user_name
+                    st.rerun()
+                else:
+                    st.error("아이디 또는 비밀번호가 틀렸습니다.")
+                    
+        with tab2:
+            reg_id = st.text_input("아이디 설정", key="reg_id")
+            reg_pw = st.text_input("비밀번호 설정", type="password", key="reg_pw")
+            reg_name = st.text_input("이름(또는 닉네임)", key="reg_name")
+            if st.button("가입하기", use_container_width=True):
+                res, msg = register_user(reg_id, reg_pw, reg_name)
+                if res: st.success(msg)
+                else: st.error(msg)
+        
+        st.write("")
+        if st.button("← 돌아가기", use_container_width=True):
+            st.session_state.show_login = False
+            st.rerun()
+
+else:
+    col1, col2, col3 = st.columns([6, 2, 2])          
+    with col2:
+        if st.session_state.logged_in:
+            if st.button("히스토리", use_container_width=True):
+                st.session_state.show_history = not st.session_state.get("show_history", False)
+                st.session_state.show_stats = False
+                st.rerun()
+        
+        if st.session_state.get("user_id") == "admin":
+            if st.button("유저 통계", use_container_width=True):
+                st.session_state.show_stats = not st.session_state.get("show_stats", False)
+                st.session_state.show_history = False
                 st.rerun()
             
-            pm_logo_b64 = get_image_base64("images/프문.webp")
-            l1_logo = get_image_base64("images/로보토미.webp")
-            l2_logo = get_image_base64("images/라오루.webp")
-            l3_logo = get_image_base64("images/limbus_logo.jpg")
-
-            pm_logo_html = f'<div style="margin-top: 15px;"><img src="{pm_logo_b64}" style="width: 150px; drop-shadow: 2px 2px 4px rgba(0,0,0,0.8);"></div>' if pm_logo_b64 else ""
-            l1_logo_html = f'<div style="margin-top: 15px;"><img src="{l1_logo}" style="width: 150px; drop-shadow: 2px 2px 4px rgba(0,0,0,0.8);"></div>' if pm_logo_b64 else ""
-            l2_logo_html = f'<div style="margin-top: 15px;"><img src="{l2_logo}" style="width: 150px; drop-shadow: 2px 2px 4px rgba(0,0,0,0.8);"></div>' if pm_logo_b64 else ""
-            l3_logo_html = f'<div style="margin-top: 15px;"><img src="{l3_logo}" style="width: 150px; drop-shadow: 2px 2px 4px rgba(0,0,0,0.8);"></div>' if pm_logo_b64 else ""
-
-            st.markdown(
-                f"""
-                <div style="text-align: center; margin-top: 30px;">
-                    <p style="color: rgba(255, 255, 255, 0.8); text-shadow: 1px 1px 2px #000; font-size: 0.85em; margin-bottom: 5px;">
-                    본 심리테스트는 '프로젝트문' 게임사의 도시 세계관(로보토미 코퍼레이션, 라이브러리 오브 루이나, 림버스 컴퍼니)을 바탕으로 만들어진 심리테스트입니다.
-                    </p>
-                    <p style="color: rgba(255, 255, 255, 0.8); text-shadow: 1px 1px 2px #000; font-size: 0.85em;">
-                    본 심리테스트에서 사용된 모든 일러스트와 세계관의 저작권은 '프로젝트문'에 있음을 밝힙니다.
-                    </p>
-                    {pm_logo_html}
-                    {l1_logo_html}
-                    {l2_logo_html}
-                    {l3_logo_html}
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-    else:
+    with col3:
+        if st.session_state.logged_in:
+            if st.button("로그아웃", use_container_width=True):
+                st.session_state.logged_in = False
+                st.session_state.user_id = "guest"
+                st.session_state.user_name = "비회원"
+                st.session_state.test_started = False
+                st.session_state.show_login = False
+                st.session_state.show_history = False
+                st.session_state.current_q = 0
+                st.session_state.answers = []
+                st.session_state.result_saved = False
+                st.query_params.clear()
+                st.rerun()
+        else:
+            if st.button("로그인", use_container_width=True):
+                st.session_state.show_login = True
+                st.rerun()
+                
+    st.divider()
+    total_q = len(questions_data)
+    if st.session_state.get("show_stats", False) and st.session_state.user_id == "admin":
+        set_background("images/림버스.webp", apply_blur=True)
+        st.markdown("<h2 style='color: white; text-align: center; text-shadow: 2px 2px 4px #000;'>전체 유저 선택 통계</h2>", unsafe_allow_html=True)
         st.markdown("""
         <style>
-        div[data-testid="stTabs"] button p, 
-        div[data-testid="stTextInput"] label p {
+        [data-testid="stExpander"] summary p {
             color: black !important;
-            text-shadow: 
-                -1px -1px 0 #FFFFFF,  
-                 1px -1px 0 #FFFFFF,
-                -1px  1px 0 #FFFFFF,
-                 1px  1px 0 #FFFFFF !important;
-            font-weight: bold;
+            text-shadow: -1px -1px 0 #FFFFFF, 1px -1px 0 #FFFFFF, -1px 1px 0 #FFFFFF, 1px 1px 0 #FFFFFF !important;
+            font-weight: bold !important;
+            font-size: 1.05em !important;
+        }
+        [data-testid="stExpander"] summary svg {
+            color: white !important;
+            fill: white !important;
         }
         </style>
         """, unsafe_allow_html=True)
 
-        col_L, col_C, col_R = st.columns([1, 2, 1])
-        with col_C:
-            st.markdown("<h2 style='color: black; text-align: center; text-shadow: -1.5px -1.5px 0 #FFF, 1.5px -1.5px 0 #FFF, -1.5px 1.5px 0 #FFF, 1.5px 1.5px 0 #FFF;'>로그인 / 회원가입</h2>", unsafe_allow_html=True)
-            tab1, tab2 = st.tabs(["로그인", "회원가입"])
-            with tab1:
-                login_id = st.text_input("아이디", key="login_id")
-                login_pw = st.text_input("비밀번호", type="password", key="login_pw")
-                if st.button("로그인", use_container_width=True):
-                    success, user_name = login_user(login_id, login_pw)
-                    if success:
-                        st.session_state.logged_in = True
-                        st.session_state.user_id = login_id
-                        st.session_state.user_name = user_name
-                        
-                        st.query_params["logged_in"] = "true"
-                        st.query_params["user_id"] = login_id
-                        st.query_params["user_name"] = user_name
-                        st.rerun()
-                    else:
-                        st.error("아이디 또는 비밀번호가 틀렸습니다.")
-                        
-            with tab2:
-                reg_id = st.text_input("아이디 설정", key="reg_id")
-                reg_pw = st.text_input("비밀번호 설정", type="password", key="reg_pw")
-                reg_name = st.text_input("이름(또는 닉네임)", key="reg_name")
-                if st.button("가입하기", use_container_width=True):
-                    res, msg = register_user(reg_id, reg_pw, reg_name)
-                    if res: st.success(msg)
-                    else: st.error(msg)
-            
-            st.write("")
-            if st.button("← 처음 화면으로 돌아가기", use_container_width=True):
-                st.session_state.show_login = False
-                st.rerun()
-else:
-    col1, col2, col3 = st.columns([6, 2, 2])
-    with col1:
-        st.markdown(f"""
-        <h3 style='color: white; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;'>
-        {st.session_state.user_name}님, 환영합니다!
-        </h3>
-        """, unsafe_allow_html=True)
+        global_stats = load_global_stats()
         
-    with col2:
-        if st.button("히스토리", use_container_width=True):
-            st.session_state.show_history = not st.session_state.get("show_history", False)
+        if not global_stats:
+            st.info("아직 누적된 데이터가 없습니다. 누군가 테스트를 완료해야 통계가 생성됩니다.")
+        else:
+            for i, q_data in enumerate(questions_data):
+                q_key = str(i)
+                if q_key in global_stats:
+                    with st.expander(f"Q{i+1}. {q_data.get('question', '')}"):
+                        choices = global_stats[q_key]
+                        total_answers = sum(choices.values())
+                        for opt, count in choices.items():
+                            pct = (count / total_answers) * 100 if total_answers > 0 else 0
+                            
+                            st.markdown(f"""
+                            <p style='color: black; font-weight: bold; margin-bottom: 5px; 
+                                      text-shadow: -1px -1px 0 #FFF, 1px -1px 0 #FFF, -1px 1px 0 #FFF, 1px 1px 0 #FFF;'>
+                            {opt} - {count}명 ({pct:.1f}%)
+                            </p>
+                            """, unsafe_allow_html=True)
+                            
+                            st.progress(pct / 100.0)
+                            
+        st.write("")
+        if st.button("← 퀴즈 화면으로 돌아가기"):
+            st.session_state.show_stats = False
             st.rerun()
-            
-    with col3:
-        if st.button("로그아웃", use_container_width=True):
-            st.session_state.logged_in = False
-            st.session_state.user_id = None
-            st.session_state.test_started = False
-            st.session_state.show_login = False
-            st.session_state.show_history = False
-            st.session_state.user_name = None
-            st.session_state.current_q = 0
-            st.session_state.answers = []
-            st.session_state.result_saved = False
-            st.query_params.clear()
-            st.rerun()
-            
-    st.divider()
-    total_q = len(questions_data)
-
-    if st.session_state.get("show_history", False):
+    elif st.session_state.get("show_history", False):
         set_background("images/림버스.webp", apply_blur=True)
         st.markdown("<h2 style='color: white; text-align: center; text-shadow: 2px 2px 4px #000;'>나의 테스트 기록</h2>", unsafe_allow_html=True)
+
         st.markdown("""
         <style>
         [data-testid="stExpander"] summary p {
@@ -467,6 +538,7 @@ else:
         if st.button("← 퀴즈 화면으로 돌아가기"):
             st.session_state.show_history = False
             st.rerun()
+
     elif not st.session_state.test_started:
         set_background("images/림버스.webp", apply_blur=True)
         col1, col2, col3 = st.columns([1, 2, 1])
@@ -479,11 +551,9 @@ else:
                 <p style="text-align: center; color: white; text-shadow: 1px 1px 2px #000;">
                 뒷골목부터 둥지까지, 당신은 어느 곳에 어울리는 사람일까요?
                 <p style="text-align: center; color: white; text-shadow: 1px 1px 2px #000;">
-                2021204045 이성민
                 </p>
                 """,
                 unsafe_allow_html=True,
-                
             )
             if st.button("테스트 시작하기", type="primary", use_container_width=True):
                 st.session_state.test_started = True
@@ -516,7 +586,6 @@ else:
                 """,
                 unsafe_allow_html=True,
             )
-
 
     elif st.session_state.current_q < total_q:
         current_data = questions_data[st.session_state.current_q]
@@ -603,7 +672,7 @@ else:
                         btn_type = "primary"
                         
                     if st.button(btn_text, type=btn_type, use_container_width=True):
-                        st.session_state.answers.append({"text": "스킵", "scores": {}})
+                        st.session_state.answers.append({"text": "죄악을 직면하기", "scores": {}})
                         st.session_state.current_q += 1
                         st.rerun()
 
@@ -622,6 +691,7 @@ else:
                 "skill_3": skill_3
             }
             save_history(st.session_state.user_id, record)
+            update_global_stats(st.session_state.answers)
             st.session_state.result_saved = True
 
         set_result_background(affiliation, apply_blur=True)
@@ -765,7 +835,10 @@ else:
                     """, unsafe_allow_html=True)
             st.divider()
 
-            st.markdown("<p style='text-align: center; color: #aaa; font-size: 0.9em;'>기록은 상단의 '히스토리'에 자동으로 보관됩니다.</p>", unsafe_allow_html=True)
+            if not st.session_state.logged_in:
+                st.markdown("<p style='text-align: center; color: #FFD700; font-weight: bold; text-shadow: 1px 1px 2px #000;'>히스토리는 로그인 후에 볼 수 있습니다.</p>", unsafe_allow_html=True)
+            else:
+                st.markdown("<p style='text-align: center; color: #aaa; font-size: 0.9em;'>기록은 상단의 '히스토리'에 자동으로 보관됩니다.</p>", unsafe_allow_html=True)
             
             empty_col1, btn_col, empty_col2 = st.columns([1, 1, 1])
             with btn_col:
