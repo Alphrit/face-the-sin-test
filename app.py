@@ -7,6 +7,7 @@ import mimetypes
 import random
 import datetime
 import pandas as pd
+from filelock import FileLock
 
 SIN_COLORS = {
     "분노": "#FF4B4B",
@@ -79,10 +80,21 @@ def load_history(user_id):
 
 def save_history(user_id, record):
     os.makedirs("data", exist_ok=True)
-    history = load_history(user_id)
-    history.append(record)
-    with open(f"data/history_{user_id}.json", "w", encoding="utf-8") as f:
-        json.dump(history, f, ensure_ascii=False, indent=2)
+    path = f"data/history_{user_id}.json"
+    lock_path = f"{path}.lock"
+    
+    with FileLock(lock_path, timeout=10):
+        history = []
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                try:
+                    history = json.load(f)
+                except json.JSONDecodeError:
+                    history = [] 
+                    
+        history.append(record)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(history, f, ensure_ascii=False, indent=2)
 
 def get_result_logo_html(result_name):
     logo_path = f"images/{result_name}.png"
@@ -144,27 +156,32 @@ def set_result_background(result_name, apply_blur=True):
 
 def update_global_stats(answers):
     stats_path = "data/global_stats.json"
+    lock_path = f"{stats_path}.lock"
     os.makedirs("data", exist_ok=True)
     
-    if os.path.exists(stats_path):
-        with open(stats_path, "r", encoding="utf-8") as f:
-            stats = json.load(f)
-    else:
+    with FileLock(lock_path, timeout=10):
         stats = {}
-    
-    for i, ans in enumerate(answers):
-        q_key = str(i)
-        choice = ans.get("text", "죄악을 직면하기")
-        if q_key not in stats:
-            stats[q_key] = {}
-        stats[q_key][choice] = stats[q_key].get(choice, 0) + 1
+        if os.path.exists(stats_path):
+            with open(stats_path, "r", encoding="utf-8") as f:
+                try:
+                    stats = json.load(f)
+                except json.JSONDecodeError:
+                    stats = {}
         
-    with open(stats_path, "w", encoding="utf-8") as f:
-        json.dump(stats, f, ensure_ascii=False, indent=2)
+        for i, ans in enumerate(answers):
+            q_key = str(i)
+            choice = ans.get("text", "죄악을 직면하기")
+            if q_key not in stats:
+                stats[q_key] = {}
+            stats[q_key][choice] = stats[q_key].get(choice, 0) + 1
+            
+        with open(stats_path, "w", encoding="utf-8") as f:
+            json.dump(stats, f, ensure_ascii=False, indent=2)
 
 def load_global_stats():
     stats_path = "data/global_stats.json"
     if os.path.exists(stats_path):
+
         with open(stats_path, "r", encoding="utf-8") as f:
             return json.load(f)
     return {}
