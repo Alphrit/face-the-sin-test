@@ -425,15 +425,11 @@ if st.session_state.show_login:
             reg_name = st.text_input("이름(또는 닉네임)", key="reg_name")
             if st.button("가입하기", use_container_width=True):
                 res, msg = register_user(reg_id, reg_pw, reg_name)
-                if res:
-                    print(f"\n[LOG] 회원가입 성공: '{reg_name}'({reg_id})")
-                else:
-                    print(f"\n[LOG] ⚠️원가입 실패: '{reg_id}' - {msg}")
                 if res: st.success(msg)
                 else: st.error(msg)
+        
         st.write("")
         if st.button("← 돌아가기", use_container_width=True):
-            print("\n[LOG]로그인 창에서 메인 화면으로 복귀")
             st.session_state.show_login = False
             st.rerun()
 
