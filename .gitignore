@@ -8,8 +8,7 @@ venv/
 .venv/
 env/
 
-front/data/users.csv
-front/data/global_stats.json
+data/global_stats.json
 *.csv
 .env
 .DS_Store
