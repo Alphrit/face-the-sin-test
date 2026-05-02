@@ -10,3 +10,6 @@ env/
 
 .env
 .DS_Store
+
+nohup.out
+*.log
