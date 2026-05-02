@@ -13,3 +13,5 @@ env/
 
 nohup.out
 *.log
+
+*.save
