@@ -28,8 +28,8 @@
 
 ### 1. 저장소 클론
 ```bash
-git clone [본인의 GitHub Repository 주소]
-cd [본인의 프로젝트 폴더명]
+git clone https://github.com/Alphrit/face-the-sin-test
+cd face-the-sin-test
 ```
 ### 2. 필수 라이브러리 설치
 Python 가상환경(venv) 생성을 권장합니다.
@@ -47,15 +47,15 @@ streamlit run app.py
 
 ## 프로젝트 구조
 ``` plaintext
-📦 [본인의 프로젝트 폴더명]
- ┣ 📂 data/
- ┃ ┣ 📜 history_*.json       # (자동생성) 유저별 테스트 기록
- ┃ ┣ 📜 questions.json       # 퀴즈 문항 및 선택지 데이터
- ┃ ┣ 📜 users.csv            # (자동생성) 회원가입 데이터
- ┃ ┗ 📊 소속 죄악.xlsx       # 결과 매핑 알고리즘용 엑셀 데이터
- ┣ 📂 images/                # UI용 배경, 로고, 캐릭터 이미지 폴더
- ┣ 📜 app.py                 # Streamlit 메인 실행 파일
- ┣ 📜 auth.py                # 로그인/회원가입 처리 모듈
- ┣ 📜 .gitignore             # Git 제외 파일 목록
- ┣ 📜 requirements.txt       # 필수 라이브러리 목록
- ┗ 📜 README.md              # 프로젝트 설명서 (현재 파일)
+face-the-sin-test
+ ┣ data/
+ ┃ ┣ history_*.json       # (자동생성) 유저별 테스트 기록
+ ┃ ┣ questions.json       # 퀴즈 문항 및 선택지 데이터
+ ┃ ┣ users.csv            # (자동생성) 회원가입 데이터
+ ┃ ┗ 소속 죄악.xlsx       # 결과 매핑 알고리즘용 엑셀 데이터
+ ┣ images/                # UI용 배경, 로고, 캐릭터 이미지 폴더
+ ┣ app.py                 # Streamlit 메인 실행 파일
+ ┣ auth.py                # 로그인/회원가입 처리 모듈
+ ┣ .gitignore             # Git 제외 파일 목록
+ ┣ requirements.txt       # 필수 라이브러리 목록
+ ┗ README.md              # 프로젝트 설명서 (현재 파일)
