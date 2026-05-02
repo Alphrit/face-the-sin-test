@@ -70,14 +70,14 @@ nohup streamlit run app.py &
 face-the-sin-test
  ┣ data/
  ┃ ┣ global_stats.json    # (자동생성) 전체 유저 선택 통계 데이터
- ┃ ┣ history_*.json       # (자동생성) 유저 및 비회원(guest)별 테스트 기록
+ ┃ ┣ history_*.json       # (자동생성) 유저 및 비회원별 테스트 기록
  ┃ ┣ questions.json       # 퀴즈 문항 및 선택지 데이터
  ┃ ┣ users.csv            # (자동생성) 회원가입 및 암호화 데이터
  ┃ ┗ 수감자 죄악.xlsx     # 결과 매핑 알고리즘용 엑셀 데이터
  ┣ images/                # UI용 배경, 로고, 캐릭터 이미지 폴더
- ┣ app.py                 # Streamlit 메인 실행 파일 및 뷰(View)
+ ┣ app.py                 # Streamlit 메인 실행 파일 및 뷰
  ┣ auth.py                # 로그인/회원가입 처리 및 암호화 모듈
  ┣ .gitignore             # Git 제외 파일 목록
- ┣ requirements.txt       # 필수 라이브러리 목록 (filelock 포함)
+ ┣ requirements.txt       # 필수 라이브러리 목록
  ┗ README.md              # 프로젝트 설명서 (현재 파일)
 ```
